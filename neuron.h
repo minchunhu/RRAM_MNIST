@@ -3,25 +3,26 @@
 
 #include <systemc>
 #include <iostream>
+#include "Config.h"
+
 using namespace std;
 using namespace sc_core;
 using namespace sc_dt;
 
-template <class dtype,int precision,int NUM_PIXELS> 
 SC_MODULE(neuron)
 {
 	sc_time time_neuron_reset;
-	sc_lv<10*precision> weight;
-	sc_lv<precision> pixel;
+	sc_lv<10*DATA_WIDTH> weight;
+	sc_lv<DATA_WIDTH> pixel;
 
 	sc_in<bool> en_p;
 	sc_in<bool> reset_p;
 	sc_in<bool> valid_p;
-	sc_in<sc_lv<precision*10> > weight_p;
-	sc_fifo_in<sc_lv<precision> > pixel_p;
+	sc_in<sc_lv<DATA_WIDTH*10> > weight_p;
+	sc_fifo_in<sc_lv<DATA_WIDTH> > pixel_p;
 
 	public:
-		sc_lv<precision> activation[11];
+		sc_lv<DATA_WIDTH> activation[11];
 
 	SC_HAS_PROCESS(neuron);
 	neuron(sc_module_name name):
@@ -30,7 +31,7 @@ SC_MODULE(neuron)
 	{
 		for (int i=0;i<11;i++)
 		{
-			for(int j=0;j<precision;j++)
+			for(int j=0;j<DATA_WIDTH;j++)
 			{
 				activation[i][j] = SC_LOGIC_0;
 			}
@@ -43,8 +44,7 @@ SC_MODULE(neuron)
 	void add_update(void);
 };
 
-template <class dtype,int precision,int NUM_PIXELS> 
-void neuron<dtype,precision,NUM_PIXELS>::read_reset(void)
+void neuron::read_reset(void)
 {
 	for(;;)
 	{
@@ -55,8 +55,8 @@ void neuron<dtype,precision,NUM_PIXELS>::read_reset(void)
 		//cout << "Reset bit is " << activation[10][6] << " at time " <<  sc_time_stamp() << endl; 
 		for(int i=0;i<10;i++)
 		{
-			sc_int<precision> zero_sc_int = 0;
-			sc_lv<precision> zero = zero_sc_int;
+			sc_int<DATA_WIDTH> zero_sc_int = 0;
+			sc_lv<DATA_WIDTH> zero = zero_sc_int;
 			activation[i] = zero;
 			
 		}
@@ -68,8 +68,7 @@ void neuron<dtype,precision,NUM_PIXELS>::read_reset(void)
 	}
 }
 
-template <class dtype,int precision,int NUM_PIXELS>
-void neuron<dtype,precision,NUM_PIXELS>::add_update(void)
+void neuron::add_update(void)
 {
 	for(;;)
 	{
@@ -78,7 +77,7 @@ void neuron<dtype,precision,NUM_PIXELS>::add_update(void)
 		//cout << "Starting the inference process in the neuron " << sc_time_stamp() << endl;
 		activation[10][5] = SC_LOGIC_1;
 
-		for(int i=0;i<NUM_PIXELS;i++)
+		for(int i=0;i<NUM_OF_INPUT_PIXELS;i++)
 		{
 			//cout  << "Waiting for valid to go high in the neuron at time " << sc_time_stamp() << endl;
 			wait(valid_p->posedge_event());
@@ -102,58 +101,58 @@ void neuron<dtype,precision,NUM_PIXELS>::add_update(void)
 				
 			}
 			
-			sc_int<precision> pixel_sc_int = pixel;
+			sc_int<DATA_WIDTH> pixel_sc_int = pixel;
 			long pixel_long = pixel_sc_int;
-			dtype *pixel_pointer = (dtype *)&pixel_long;
-			dtype pixel_dtype = *pixel_pointer;
-			//cout << "Pixel read as " << pixel_dtype << endl;
+			float *pixel_pointer = (float *)&pixel_long;
+			float pixel_float = *pixel_pointer;
+			//cout << "Pixel read as " << pixel_float << endl;
 			int num = 0;
 			
-			for(int j=10*precision-1;j>=precision-1;j-=precision)
+			for(int j=10*DATA_WIDTH-1;j>=DATA_WIDTH-1;j-=DATA_WIDTH)
 			{
-				sc_lv<precision> weight_j = weight(j,j-precision+1);
-				sc_int<precision> weight_sc_int = weight_j;
+				sc_lv<DATA_WIDTH> weight_j = weight(j,j-DATA_WIDTH+1);
+				sc_int<DATA_WIDTH> weight_sc_int = weight_j;
 				long weight_long = weight_sc_int;
-				dtype *weight_pointer = (dtype *)&weight_long;
-				dtype weight_dtype = *weight_pointer;
+				float *weight_pointer = (float *)&weight_long;
+				float weight_float = *weight_pointer;
 				
-				//cout << "Weight read as " << weight_dtype << " for pixel " << i  <<endl;
+				//cout << "Weight read as " << weight_float << " for pixel " << i  <<endl;
 				
-				sc_lv<precision> activate = activation[num];
-				sc_int<precision> activate_sc_int = activate;
+				sc_lv<DATA_WIDTH> activate = activation[num];
+				sc_int<DATA_WIDTH> activate_sc_int = activate;
 				long activate_long = activate_sc_int;
-				dtype *activate_pointer =(dtype *)&activate_long;
-				dtype activate_dtype = *activate_pointer;
+				float *activate_pointer =(float *)&activate_long;
+				float activate_float = *activate_pointer;
 
-				activate_dtype += weight_dtype*pixel_dtype;
+				activate_float += weight_float*pixel_float;
 
-				long *update_pointer = (long *)&activate_dtype;
-				sc_int<precision> update_sc_int = *update_pointer;
-				sc_lv<precision> update = update_sc_int;
+				long *update_pointer = (long *)&activate_float;
+				sc_int<DATA_WIDTH> update_sc_int = *update_pointer;
+				sc_lv<DATA_WIDTH> update = update_sc_int;
 				activation[num] = update;
 
 				num++;
 			}
 		}
 
-		sc_lv<precision> activate = activation[0];
-		sc_int<precision> activate_sc_int = activate;
+		sc_lv<DATA_WIDTH> activate = activation[0];
+		sc_int<DATA_WIDTH> activate_sc_int = activate;
 		long activate_long = activate_sc_int;
-		dtype *activate_pointer =(dtype *)&activate_long;
-		dtype activate_dtype = *activate_pointer;
+		float *activate_pointer =(float *)&activate_long;
+		float activate_float = *activate_pointer;
 		int pred_int = 0;
-		dtype max_val = activate_dtype;
+		float max_val = activate_float;
 		for(int i=1;i<10;i++)
 		{
-			sc_lv<precision> activate = activation[i];
-			sc_int<precision> activate_sc_int = activate;
+			sc_lv<DATA_WIDTH> activate = activation[i];
+			sc_int<DATA_WIDTH> activate_sc_int = activate;
 			long activate_long = activate_sc_int;
-			dtype *activate_pointer =(dtype *)&activate_long;
-			dtype activate_dtype = *activate_pointer;
-			//cout << "Activation of neuron " << i << " is " << activate_dtype << endl;
-			if(activate_dtype>max_val)
+			float *activate_pointer =(float *)&activate_long;
+			float activate_float = *activate_pointer;
+			//cout << "Activation of neuron " << i << " is " << activate_float << endl;
+			if(activate_float>max_val)
 			{
-				max_val = activate_dtype;
+				max_val = activate_float;
 				pred_int = i;
 			}
 		}
@@ -164,4 +163,5 @@ void neuron<dtype,precision,NUM_PIXELS>::add_update(void)
 		activation[10][5] = SC_LOGIC_0;	
 	}
 }
+
 #endif

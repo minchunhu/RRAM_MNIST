@@ -1,15 +1,18 @@
 #include "sender.h"
 #include <ctime>
 
-void sender::transciever(void)
+void sender::test_script(void)
 {
+	cs_lc.write(true);
+	io.write(high_impedance);
+	
 	wait(clk.posedge_event());
 	wait(5,SC_NS);
 	cout << "Writing CS low" << endl;
 	cs_lc.write(false);
 	wait(clk.posedge_event());
 	//sc_lv<64> zero = "0000000000000000000000000000000000000000000000000000000000000000";
-	sc_lv<32> write_enable = "00000000000000000000000000000110";
+	sc_lv<DATA_WIDTH> write_enable = "00000000000000000000000000000110";
 	//zero(31,0) = write_enable;
 	io.write(write_enable);
 	wait(clk.posedge_event());
@@ -21,7 +24,7 @@ void sender::transciever(void)
 	wait(5,SC_NS);
 	cs_lc.write(false);
 	wait(clk.posedge_event());
-	sc_lv<32> ins = "00000000000000000000000000010101";
+	sc_lv<DATA_WIDTH> ins = "00000000000000000000000000010101";
 	//zero(31,0) = ins;
 	io.write(ins); 
 	wait(clk.posedge_event());
@@ -57,7 +60,7 @@ void sender::transciever(void)
 	ins = "00000000000000000000000000000011";
 	//zero(31,0) = ins;
 	io.write(ins);
-	sc_lv<32> address = "00000000000000000000000000000000";
+	sc_lv<DATA_WIDTH> address = "00000000000000000000000000000000";
 	wait(clk.posedge_event());
 	io.write(address);
 	for(int i=0;i<10;i++)
@@ -65,9 +68,9 @@ void sender::transciever(void)
 		wait(clk.negedge_event());
 		wait(SC_ZERO_TIME);
 	
-		sc_lv<32> weight = io.read();
+		sc_lv<DATA_WIDTH> weight = io.read();
 		cout << "Weight read as in bit format " << weight << endl;
-		sc_int<32> weight_sc_int = weight;
+		sc_int<DATA_WIDTH> weight_sc_int = weight;
 		long weight_int = weight_sc_int;
 		float *weight_p = (float *)&weight_int;
 		float weight_float = *weight_p;
@@ -101,13 +104,13 @@ void sender::transciever(void)
 		wait(clk.posedge_event());
 		ins = "00000000000000000000000000010100";
 		io.write(ins);
-		for(int j=0;j<784;j++)
+		for(int j=0;j<NUM_OF_INPUT_PIXELS;j++)
 		{
 			float pix_float = 0.0;
 			f >> pix_float;
 			long *pix_pointer = (long *)&pix_float;
-			sc_int<32> pix_sc_int = *pix_pointer;
-			sc_lv<32> pix  = pix_sc_int;
+			sc_int<DATA_WIDTH> pix_sc_int = *pix_pointer;
+			sc_lv<DATA_WIDTH> pix  = pix_sc_int;
 			wait(clk.posedge_event());
 			io.write(pix);
 		}
@@ -123,7 +126,7 @@ void sender::transciever(void)
 		io.write(ins);
 		wait(clk.negedge_event());
 		wait(SC_ZERO_TIME);
-		sc_lv<32> done = io.read();
+		sc_lv<DATA_WIDTH> done = io.read();
 		while(done[5]==SC_LOGIC_1)
 		{
 			wait(clk.negedge_event());
@@ -154,4 +157,5 @@ void sender::transciever(void)
 	float num_img = (float)num_images;
 	accuracy = 100.0*accuracy/num_img;
 	cout << "Accuracy calculated for " << num_images << " images is " << accuracy << " after simulation time " << sc_simulation_time()/1000.0/1000.0 << "ms and actual time " << t2-t1  << endl;
+	
 }

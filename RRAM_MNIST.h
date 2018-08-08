@@ -5,49 +5,40 @@
 #include <iostream>
 #include <fstream>
 #include <cmath>
+#include "Config.h"
 #include "neuron.h"
+
 using namespace std;
 using namespace sc_core;
 using namespace sc_dt;
 
-template <class dtype,const int precision,const int NUM_PIXELS>
 SC_MODULE(RRAM_MNIST)
 {
 	sc_in<bool> clk_p;
 	sc_in<bool> cs_p;
-	sc_inout<sc_lv<precision> > io_p;
+	sc_inout< sc_lv<DATA_WIDTH> > io_p;
 
-	#define instruction_read "0b000000011"
-	#define instruction_write_enable "0b000000110"
-	#define instruction_page_write "0b000001010"
-	#define instruction_weight_write "0b000010101"
-	#define instruction_page_erase "0b011011011"
-	#define instruction_inference "0b000010100"
-	#define instruction_read_neuron_value "0b000010110"
-	#define instruction_read_class_register "0b000010111"
-	#define instruction_read_status_register "0b000000101"
-
-	bool data[256][2048];
+	bool data[NUM_OF_ROWS][NUM_OF_COLS];
 	bool cs_low;
 	bool cs_val;
 	int pixels_read;
 	int cycles_read_weight;
-	dtype weight_dtype;
-	sc_lv<8> instruction;
-	sc_lv<16>  address;
-	sc_lv<precision> zero;
-	sc_lv<precision> read_value;
-	sc_lv<precision> write_value;
-	sc_lv<precision> weight;
-	sc_lv<precision> pixel;
-	sc_lv<10*precision> weight_page_buffer;
+	float weight_float;
+	sc_lv<INS_WIDTH> instruction;
+	sc_lv<ADDR_WIDTH> address;
+	sc_lv<DATA_WIDTH> zero;
+	sc_lv<DATA_WIDTH> read_value;
+	sc_lv<DATA_WIDTH> write_value;
+	sc_lv<DATA_WIDTH> weight;
+	sc_lv<DATA_WIDTH> pixel;
+	sc_lv<10*DATA_WIDTH> weight_page_buffer;
 
-	neuron<dtype,precision,NUM_PIXELS> nerve; 
+	neuron nerve; 
 
 	ifstream f;
 
-	sc_lv<8> status_register_1;
-	sc_lv<8> status_register_2;
+	sc_lv<STATUS_REG_WIDTH> status_register_1;
+	sc_lv<STATUS_REG_WIDTH> status_register_2;
 
 	sc_event begin_read_instruction;
 	sc_event begin_read;
@@ -68,13 +59,11 @@ SC_MODULE(RRAM_MNIST)
 	sc_signal<bool> enable_lc;
 	sc_signal<bool> reset_lc;
 	sc_signal<bool> valid_lc;
-	sc_signal<sc_lv<10*precision> > weight_lc;
- 	sc_fifo<sc_lv<precision> > pixel_lc;
+	sc_signal<sc_lv<10*DATA_WIDTH> > weight_lc;
+ 	sc_fifo<sc_lv<DATA_WIDTH> > pixel_lc;
 
-	sc_trace_file* tracefile;
-
-	sc_lv<precision> pixel_high_impedance;
-	sc_lv<10*precision> weight_high_impedance;	
+	sc_lv<DATA_WIDTH> pixel_high_impedance;
+	sc_lv<10*DATA_WIDTH> weight_high_impedance;	
 
 	SC_HAS_PROCESS(RRAM_MNIST);
 	RRAM_MNIST(sc_module_name name,int weight_read_delay,int fifo_size):
@@ -90,16 +79,6 @@ SC_MODULE(RRAM_MNIST)
 		time_page_erase(1,SC_MS),
 		time_weight_write(100,SC_NS)
 	{
-
-		tracefile = sc_create_vcd_trace_file("waveform");
-		sc_trace(tracefile,clk_p,"clk");
-		sc_trace(tracefile,cs_p,"CS");
-		sc_trace(tracefile,io_p,"IO");
-		sc_trace(tracefile,reset_lc,"reset");
-		sc_trace(tracefile,enable_lc,"enable");
-		sc_trace(tracefile,valid_lc,"valid");
-		sc_trace(tracefile,weight_lc,"weight");
-
 		cout << "Attaching ports of neuron block" << endl;
 		nerve.en_p(enable_lc);
 		nerve.reset_p(reset_lc);
@@ -111,17 +90,17 @@ SC_MODULE(RRAM_MNIST)
 		enable_lc.write(true);
 		reset_lc.write(true);
 		valid_lc.write(false);		
-		for(int i=0;i<10*precision;i++)
+		for(int i=0;i<10*DATA_WIDTH;i++)
 		{
 			weight_high_impedance[i]=SC_LOGIC_Z;
 		}
 		weight_lc.write(weight_high_impedance);
-		for(int i=0;i<precision;i++)	
+		for(int i=0;i<DATA_WIDTH;i++)	
 		{
 			pixel_high_impedance[i] = SC_LOGIC_Z;
 			zero[i] = SC_LOGIC_0;
 		}
-
+		
 		SC_THREAD(read_cs);
 			sensitive << cs_p.value_changed();
 		SC_THREAD(read_instruction);
@@ -146,15 +125,15 @@ SC_MODULE(RRAM_MNIST)
 		SC_THREAD(inference);
 			sensitive << begin_inference;
 		SC_THREAD(add_update_neuron);
-	
-
-		for (int i=0;i<256;i++)
+		
+		
+		for (int i=0; i<NUM_OF_ROWS; i++)
 		{
-			for(int j=0;j<2048;j++)
+			for(int j=0; j<NUM_OF_COLS; j++)
 			{
 				data[i][j] = true;
 			}
-		}		
+		}
 	}
 
 	void read_cs(void);
@@ -171,8 +150,7 @@ SC_MODULE(RRAM_MNIST)
 	void add_update_neuron(void);
 };
 
-template <class dtype,const int precision,const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_cs(void)
+void RRAM_MNIST::read_cs(void)
 {
 	for(;;)
 	{
@@ -194,8 +172,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_cs(void)
 	}
 }
 
-template <class dtype,const int precision,const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
+void RRAM_MNIST::read_instruction()
 {
 	for (;;)
 	{
@@ -212,7 +189,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 			//cout << "Reading instruction" << endl;
 			instruction = io_p->read().range(7,0);
 			//cout  << "Instruction read as " << instruction << endl;
-			if (instruction.to_string(SC_BIN)==instruction_read)
+			if (instruction.to_string(SC_BIN)==INS_READ)
 			{	
 				if (status_register_1[0]==SC_LOGIC_0)
 				{
@@ -223,7 +200,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 					cout << "Instruction ignored" << endl;
 				}			
 			}
-			else if (instruction.to_string(SC_BIN)==instruction_write_enable)
+			else if (instruction.to_string(SC_BIN)==INS_WRITE_ENABLE)
 			{
 				if (status_register_1[0]==SC_LOGIC_0)
 				{
@@ -235,7 +212,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 					cout << "Instruction ignored" << endl;
 				}
 			} 
-			else if (instruction.to_string(SC_BIN)==instruction_page_write)
+			else if (instruction.to_string(SC_BIN)==INS_PAGE_WRITE)
 			{
 				if (status_register_1[0]==SC_LOGIC_0 && status_register_1[1]==1)
 				{
@@ -246,7 +223,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 					cout << "Instruction ignored" << endl;
 				}
 			}
-			else if (instruction.to_string(SC_BIN)==instruction_weight_write)
+			else if (instruction.to_string(SC_BIN)==INS_WEIGHT_WRITE)
 			{
 				if (status_register_1[1]==1 && status_register_1[0]==SC_LOGIC_0)
 				{
@@ -257,7 +234,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 					cout << "Instruction ignored" << endl;
 				}
 			} 
-			else if (instruction.to_string(SC_BIN)==instruction_page_erase)
+			else if (instruction.to_string(SC_BIN)==INS_PAGE_ERASE)
 			{
 				if (status_register_1[1]==1 && status_register_1[0]==SC_LOGIC_0)
 				{
@@ -268,7 +245,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 					cout << "Instruction ignored" << endl;
 				}
 			}
-			else if (instruction.to_string(SC_BIN)==instruction_inference)
+			else if (instruction.to_string(SC_BIN)==INS_INFERENCE)
 			{
 				if (status_register_1[1]==1 && status_register_1[0]==SC_LOGIC_0)
 				{
@@ -279,15 +256,15 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 					cout << "Instruction ignored" << endl;
 				}
 			} 
-			else if (instruction.to_string(SC_BIN)==instruction_read_neuron_value)
+			else if (instruction.to_string(SC_BIN)==INS_READ_NEURON_VALUE)
 			{	
 				begin_read_neuron_value.notify();
 			}
-			else if (instruction.to_string(SC_BIN)==instruction_read_class_register)
+			else if (instruction.to_string(SC_BIN)==INS_READ_CLASS_REG)
 			{
 				begin_read_class_register.notify();
 			} 
-			else if (instruction.to_string(SC_BIN)==instruction_read_status_register)
+			else if (instruction.to_string(SC_BIN)==INS_READ_STATUS_REG)
 			{
 				begin_read_status_register.notify();
 			}
@@ -300,8 +277,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 	}
 }
 
-template <class dtype,const int precision,const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_read(void)
+void RRAM_MNIST::page_read(void)
 {
 	for(;;)
 	{
@@ -327,8 +303,8 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_read(void)
 				}
 			}
 
-			int row = address_int/256;
-			int col = address_int%256;
+			int row = address_int/NUM_OF_ROWS;
+			int col = address_int%NUM_OF_ROWS;
 
 			int cell = col;
 			while (true)
@@ -341,12 +317,12 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_read(void)
 				}
 
 				bool flag = false;
-				for(int j=0;j<precision;j++)
+				for(int j=0;j<DATA_WIDTH;j++)
 				{
-					if ((cell+j)>=2048)
+					if ((cell+j)>=NUM_OF_COLS)
 					{
 						row++;
-						if (row>=256)
+						if (row>=NUM_OF_ROWS)
 						{
 							row = 0;
 						}
@@ -355,12 +331,12 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_read(void)
 						break;
 					}
 
-					read_value[precision-j-1] = (sc_logic)data[row][cell+j];
+					read_value[DATA_WIDTH-j-1] = (sc_logic)data[row][cell+j];
 				}
 
 				if (flag==false)
 				{
-					cell += precision;
+					cell += DATA_WIDTH;
 					io_p->write(read_value);
 				}
 			}
@@ -371,8 +347,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_read(void)
 	}
 }
 
-template <class dtype,const int precision,const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::write_enable(void)
+void RRAM_MNIST::write_enable(void)
 {
 	for(;;)
 	{
@@ -382,8 +357,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::write_enable(void)
 	}
 }
 
-template <class dtype,const int precision,const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_write(void)
+void RRAM_MNIST::page_write(void)
 {
 	for(;;)
 	{
@@ -411,8 +385,8 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_write(void)
 				}
 			}
 
-			int row = address_int/256;
-			int col = address_int%256;
+			int row = address_int / NUM_OF_ROWS;
+			int col = address_int % NUM_OF_ROWS;
 
 			int cell = col;
 
@@ -426,13 +400,13 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_write(void)
 
 				write_value =  io_p->read();
 
-				for(int j=0;j<precision;j++)
+				for(int j=0;j<DATA_WIDTH;j++)
 				{
-					if(cell>=2048)
+					if(cell>=NUM_OF_COLS)
 					{
 						cell = 0;
 					}
-					if (write_value[precision-j-1] == SC_LOGIC_1)
+					if (write_value[DATA_WIDTH-j-1] == SC_LOGIC_1)
 					{
 						data[row][cell] = true;
 					}
@@ -451,8 +425,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_write(void)
 	}
 }
 
-template <class dtype,const int precision,const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_erase(void)
+void RRAM_MNIST::page_erase(void)
 {
 	for(;;)
 	{
@@ -480,12 +453,12 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_erase(void)
 				}
 			}
 
-			int row = address_int/256;
-			int col = address_int%256;
+			int row = address_int/NUM_OF_ROWS;
+			int col = address_int%NUM_OF_ROWS;
 
 			int cell = 0;
 
-			while(cell<2048)
+			while(cell<NUM_OF_COLS)
 			{
 				data[row][cell] = false;
 				cell++;
@@ -498,8 +471,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_erase(void)
 	}
 }
 
-template <class dtype,const int precision,const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::weight_write(void)
+void RRAM_MNIST::weight_write(void)
 {
 	for(;;)
 	{
@@ -514,22 +486,22 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::weight_write(void)
 	int row = 0;
 	int cell = 0;
 
-	int num_bit_pixel = 10*precision;
+	int num_bit_pixel = 10*DATA_WIDTH;
 	int beg = 0;
-	int num_weights = 10*NUM_PIXELS;
+	int num_weights = 10*NUM_OF_INPUT_PIXELS;
 	for (int i=0;i<num_weights;i++)
 	{
-		f >> weight_dtype;
+		f >> weight_float;
 
-		cout << "Reading weight " << i+1 << " as " << weight_dtype <<endl;
+		cout << "Reading weight " << i+1 << " as " << weight_float <<endl;
 
-		long *weight_pointer = (long *)&weight_dtype;
-		sc_int<precision> weight_sc_int = *weight_pointer;
+		long *weight_pointer = (long *)&weight_float;
+		sc_int<DATA_WIDTH> weight_sc_int = *weight_pointer;
 		weight = weight_sc_int;
 
-		for(int j=0;j<precision;j++)
+		for(int j=0;j<DATA_WIDTH;j++)
 		{
-			if (weight[precision-j-1] == SC_LOGIC_1)
+			if (weight[DATA_WIDTH-j-1] == SC_LOGIC_1)
 			{
 				data[row][cell] = true;
 			}
@@ -540,14 +512,14 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::weight_write(void)
 			cell++;
 		}
 
-		if ((i+1)%10==0 || cell>=2048)
+		if ((i+1)%10==0 || cell>=NUM_OF_COLS)
 		{
 			cout << "Moving to next row" << endl; 
 			cell = beg;
 			row++;
 			cout << "Row " << row << " col " << cell << endl; 
 		}
-		if (row>=256)
+		if (row>=NUM_OF_ROWS)
 		{
 			cout << "Wrapping the weights" << endl;
 			row = 0;
@@ -564,10 +536,8 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::weight_write(void)
 	cout << "Write enable set to 0" << endl;
 	}
 }
-#endif
 
-template <class dtype,const int precision, const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_neuron_value(void)
+void RRAM_MNIST::read_neuron_value(void)
 {
 	for(;;)
 	{
@@ -592,8 +562,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_neuron_value(void)
 	}
 }
 
-template <class dtype,const int precision, const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_class_register(void)
+void RRAM_MNIST::read_class_register(void)
 {
 	for(;;)
 	{
@@ -616,14 +585,13 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_class_register(void)
 	}
 }
 
-template <class dtype,const int precision, const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_status_register(void)
+void RRAM_MNIST::read_status_register(void)
 {
 	for(;;)
 	{
 		wait(begin_read_status_register);
 		cout << "Reading status register" << endl; 
-		sc_lv<precision> val = pixel_high_impedance;
+		sc_lv<DATA_WIDTH> val = pixel_high_impedance;
 		while (true)
 		{
 			wait(clk_p->negedge_event() | cs_p->default_event());
@@ -642,8 +610,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_status_register(void)
 	}
 }
 
-template <class dtype,const int precision,const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::inference(void)
+void RRAM_MNIST::inference(void)
 {
 	for(;;)
 	{
@@ -654,7 +621,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::inference(void)
 		begin_add_update_neuron.notify();
 		pixels_read = 0;
 		nerve.activation[10][4] = SC_LOGIC_1;
-		while(true && pixels_read<NUM_PIXELS)
+		while(true && pixels_read<NUM_OF_INPUT_PIXELS)
 		{
 			wait(clk_p->posedge_event() | cs_p->default_event());
 			if (cs_p->event())
@@ -675,8 +642,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::inference(void)
 	}
 }
 
-template <class dtype, const int precision,const int NUM_PIXELS>
-void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
+void RRAM_MNIST::add_update_neuron(void)
 {
 	for(;;)
 	{
@@ -706,7 +672,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
 			int row = 0;
 			int cell = 0;
 			int beg = 0;
-			int num_pixel_bit = 10*precision;
+			int num_pixel_bit = 10*DATA_WIDTH;
 			bool flag = false;
 			bool wrap = false;
 				
@@ -715,12 +681,12 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
 				enable_lc.write(false);
 				//cout << "Enable set low by controller at time " << sc_time_stamp() << endl;			
 		
-				for(int i=0;i<NUM_PIXELS;i++)
+				for(int i=0;i<NUM_OF_INPUT_PIXELS;i++)
 				{
 					for(int j=0;j<cycles_read_weight;j++)
 					{
 						wait(clk_p->posedge_event() | cs_p->default_event());
-						if(cs_p->event() && pixels_read<NUM_PIXELS) 
+						if(cs_p->event() && pixels_read<NUM_OF_INPUT_PIXELS) 
 						{
 							flag = true;
 							break;
@@ -738,7 +704,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
 						{
 							weight_page_buffer[num_pixel_bit-k-1] = (sc_logic)data[row][cell];
 							cell++;
-							if(cell>=2048)
+							if(cell>=NUM_OF_COLS)
 							{
 								wrap = true;
 								cell = beg;
@@ -757,7 +723,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
 							cell = beg;
 							row++;
 						}
-						if (row>=256)
+						if (row>=NUM_OF_ROWS)
 						{
 							row = 0;
 							beg += num_pixel_bit;
@@ -776,5 +742,5 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
 	}
 }
 
-
+#endif
 

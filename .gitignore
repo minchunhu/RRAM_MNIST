@@ -1,3 +1,9 @@
+nWaveLog/
+vfastLog/
+novas.conf
+*.vcd
+*.fsdb
+*.rc
 *.txt
 *.o
 *.exe

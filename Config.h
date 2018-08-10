@@ -3,7 +3,7 @@
 
 // RRAM Structure
 #define INS_WIDTH 8
-#define ADDR_WIDTH 24
+#define ADDR_WIDTH 16
 #define DATA_WIDTH 32
 #define STATUS_REG_WIDTH 8
 
@@ -19,6 +19,7 @@
 
 // RRAM MNIST Structure
 #define NUM_OF_INPUT_PIXELS 784
+#define NUM_OF_OUTPUT_NEURONS 10
 
 // RRAM MNIST Instructions
 #define INS_WEIGHT_WRITE "0b000010101"

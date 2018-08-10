@@ -1,5 +1,5 @@
-#ifndef sender_H
-#define sender_H
+#ifndef _SENDER_H_
+#define _SENDER_H_
 
 #include <systemc>
 #include <iostream>
@@ -10,22 +10,22 @@ using namespace std;
 using namespace sc_core;
 using namespace sc_dt;
 
-SC_MODULE(sender)
+SC_MODULE(Sender)
 {
 	sc_in<bool> clk;
-	sc_out<bool> cs_lc;
+	sc_out<bool> cs;
 	sc_inout< sc_lv<DATA_WIDTH> > io;
 	
 	ifstream f;
 	
 	sc_lv<DATA_WIDTH> high_impedance;
 	
-	SC_CTOR(sender):
-		high_impedance("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ")
+	SC_CTOR(Sender):
+		high_impedance(SC_LOGIC_Z)
 	{
 		SC_THREAD(test_script);
 	}
-
+	
 	void test_script(void);
 };
 #endif

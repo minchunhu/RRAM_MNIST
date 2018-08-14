@@ -18,27 +18,19 @@ SC_MODULE(RRAM_MNIST)
 	sc_in<bool> cs_p;
 	sc_inout< sc_lv<DATA_WIDTH> > io_p;
 	
-	bool data[NUM_OF_ROWS][NUM_OF_COLS];
 	bool cs_active;
-	bool cs;
-	int pixels_read;
-	int cycles_read_weight;
-	float weight_float;
+	sc_lv<DATA_WIDTH> io_high_impedance;
+	sc_uint<INS_WIDTH> instruction;
+	sc_uint<ADDR_WIDTH> address;
+	sc_uint<DATA_WIDTH> read_value;
+	sc_uint<DATA_WIDTH> write_value;
 	
-	sc_lv<INS_WIDTH> instruction;
-	sc_lv<ADDR_WIDTH> address;
-	sc_lv<DATA_WIDTH> read_value;
-	sc_lv<DATA_WIDTH> write_value;
-	sc_lv<DATA_WIDTH> weight;
-	sc_lv<DATA_WIDTH> pixel;
-	sc_lv<NUM_OF_OUTPUT_NEURONS*DATA_WIDTH> weight_page_buffer;
-
-	Neuron nerve; 
-
-	ifstream f;
-
-	sc_lv<STATUS_REG_WIDTH> status_register_1;
-	sc_lv<STATUS_REG_WIDTH> status_register_2;
+	sc_signal< sc_uint<DATA_WIDTH> > page_buffer [NUM_OF_OUTPUT_NEURONS];
+	
+	bool data[NUM_OF_ROWS][NUM_OF_COLS];
+	
+	sc_uint<STATUS_REG_WIDTH> status_register_1;
+	sc_uint<STATUS_REG_WIDTH> status_register_2;
 
 	sc_event begin_get_instruction;
 	sc_event begin_read;
@@ -50,52 +42,46 @@ SC_MODULE(RRAM_MNIST)
 	sc_event begin_read_neuron_value;
 	sc_event begin_read_class_register;
 	sc_event begin_read_status_register;
-	sc_event begin_add_update_neuron;
-
-	sc_time time_page_write;
-	sc_time time_page_erase;
-	sc_time time_weight_write;
-
-	sc_signal<bool> enable_lc;
-	sc_signal<bool> reset_lc;
-	sc_signal<bool> valid_lc;
-	sc_signal<sc_lv<NUM_OF_OUTPUT_NEURONS*DATA_WIDTH> > weight_lc;
- 	sc_fifo<sc_lv<DATA_WIDTH> > pixel_fifo;
-
-	sc_lv<DATA_WIDTH> io_high_impedance;
-	sc_lv<NUM_OF_OUTPUT_NEURONS*DATA_WIDTH> weight_high_impedance;	
-
-	SC_HAS_PROCESS(RRAM_MNIST);
-	RRAM_MNIST(sc_module_name name,int weight_read_delay,int fifo_size):
-		sc_module(name),
-		nerve("nerve"),
+	sc_event begin_read_weights;
+	
+	Neuron neuron;
+	sc_signal<bool> reset;
+	sc_signal<bool> enable;
+	sc_signal<bool> valid;
+	sc_signal< sc_uint<DATA_WIDTH> > status;
+	sc_fifo< sc_uint<DATA_WIDTH> > pixel_fifo;
+	
+	sc_signal< sc_uint<DATA_WIDTH> > activation [NUM_OF_OUTPUT_NEURONS];
+	
+	SC_CTOR(RRAM_MNIST):
 		cs_active(false),
-		cs(true),
-		pixels_read(0),
-		cycles_read_weight(weight_read_delay),
-		pixel_fifo(fifo_size),
-		status_register_1("00000000"),
-		time_page_write(1,SC_MS),
-		time_page_erase(1,SC_MS),
-		time_weight_write(100,SC_NS),
-		io_high_impedance(SC_LOGIC_Z)
+		io_high_impedance(SC_LOGIC_Z),
+		status_register_1(0),
+		status_register_2(0),
+		neuron("neuron"),
+		pixel_fifo(FIFO_SIZE)
 	{
-		// cout << "Attaching ports of Neuron block" << endl;
-		nerve.en_p(enable_lc);
-		nerve.reset_p(reset_lc);
-		nerve.valid_p(valid_lc);
-		nerve.pixel_p(pixel_fifo);
-		nerve.weight_p(weight_lc);
-		// cout << "Ports of Neuron block attached" << endl;		
-
-		enable_lc.write(true);
-		reset_lc.write(true);
-		valid_lc.write(false);		
-		for(int i=0;i<NUM_OF_OUTPUT_NEURONS*DATA_WIDTH;i++)
-		{
-			weight_high_impedance[i]=SC_LOGIC_Z;
+		neuron.clk_p(clk_p);
+		neuron.enable_p(enable);
+		neuron.reset_p(reset);
+		neuron.valid_p(valid);
+		neuron.status_p(status);
+		neuron.pixel_fifo_p(pixel_fifo);
+		
+		for (int i=0; i<NUM_OF_OUTPUT_NEURONS; i++) {
+			neuron.weight_p[i](page_buffer[i]);
+			neuron.activation_p[i](activation[i]);
 		}
-		weight_lc.write(weight_high_impedance);
+		
+		enable.write(true);
+		reset.write(true);
+		valid.write(false);
+		
+		for (int i=0; i<NUM_OF_ROWS; i++) {
+			for(int j=0; j<NUM_OF_COLS; j++) {
+				data[i][j] = true;
+			}
+		}
 		
 		SC_THREAD(read_cs);
 			sensitive << cs_p.value_changed();
@@ -113,36 +99,28 @@ SC_MODULE(RRAM_MNIST)
 			sensitive << begin_weight_write;
 		SC_THREAD(read_neuron_value);
 			sensitive << begin_read_neuron_value;
-		SC_THREAD(read_class_register);
+		SC_THREAD(read_neuron_status);
 			sensitive << begin_read_class_register;
 		SC_THREAD(read_status_register);
 			sensitive << begin_read_status_register;
 		SC_THREAD(inference);
 			sensitive << begin_inference;
-		SC_THREAD(add_update_neuron);
-		
-		
-		for (int i=0; i<NUM_OF_ROWS; i++)
-		{
-			for(int j=0; j<NUM_OF_COLS; j++)
-			{
-				data[i][j] = true;
-			}
-		}
+		SC_THREAD(read_weights);
+			sensitive << begin_read_weights;
 	}
-
+	
 	void read_cs(void);
 	void get_instruction(void);
 	void page_read(void);
 	void write_enable(void);
 	void page_write(void);
 	void page_erase(void);
+	void read_status_register(void);
 	void weight_write(void);
 	void read_neuron_value(void);
-	void read_class_register(void);
-	void read_status_register(void);
+	void read_neuron_status(void);
 	void inference(void);
-	void add_update_neuron(void);
+	void read_weights(void);
 };
 
 #endif

@@ -2,6 +2,7 @@
 
 void RRAM_MNIST::read_cs(void)
 {
+	bool cs;
 	while(true)
 	{
 		wait(SC_ZERO_TIME);
@@ -31,8 +32,8 @@ void RRAM_MNIST::get_instruction()
 		if (cs_p->event()) {
 			continue;
 		}
-		
-		instruction = io_p->read().range(7,0);
+		sc_uint<DATA_WIDTH> io_in = io_p->read();
+		instruction = io_in.range(7,0);
 		
 		if (status_register_1[0] != 0) {
 			cout << name() << ": busy ... instruction " << instruction << " ignored" << endl;
@@ -90,18 +91,11 @@ void RRAM_MNIST::page_read(void)
 		if (cs_p->event()) {
 			continue;
 		}
+		sc_uint<DATA_WIDTH> io_in = io_p->read();
+		address = io_in.range(ADDR_WIDTH-1,0);
 		
-		address = io_p->read().range(ADDR_WIDTH-1,0);
-		
-		int address_int = 0;
-		for(int i=0; i<ADDR_WIDTH; i++) {
-			if (address[i] == true) {
-				address_int += pow(2,i);
-			}
-		}
-		
-		int row = address_int / NUM_OF_ROWS;
-		int col = address_int % NUM_OF_ROWS;
+		int row = address / NUM_OF_ROWS;
+		int col = address % NUM_OF_ROWS;
 		
 		while (true)
 		{
@@ -125,13 +119,14 @@ void RRAM_MNIST::page_read(void)
 					break;
 				}
 				
-				read_value[DATA_WIDTH-j-1] = (sc_logic)data[row][col+j];
+				read_value[DATA_WIDTH-j-1] = data[row][col+j];
 			}
 			
 			if (read_row_finish == false)
 			{
 				col += DATA_WIDTH;
-				io_p->write(read_value);
+				sc_lv<DATA_WIDTH> io_out = read_value;
+				io_p->write(io_out);
 			}
 		}
 		wait(clk_p->negedge_event());
@@ -165,20 +160,11 @@ void RRAM_MNIST::page_write(void)
 		if (cs_p->event()) {
 			continue;
 		}
+		sc_uint<DATA_WIDTH> io_in = io_p->read();
+		address = io_in.range(ADDR_WIDTH-1,0);
 		
-		address = io_p->read().range(ADDR_WIDTH-1,0);
-		
-		int address_int = 0;
-		for(int i=0;i<ADDR_WIDTH;i++)
-		{
-			if (address[i] == true)
-			{
-				address_int += pow(2,i);
-			}
-		}
-		
-		int row = address_int / NUM_OF_ROWS;
-		int col = address_int % NUM_OF_ROWS;
+		int row = address / NUM_OF_ROWS;
+		int col = address % NUM_OF_ROWS;
 		
 		while(true)
 		{
@@ -186,8 +172,8 @@ void RRAM_MNIST::page_write(void)
 			if (cs_p->event()) {
 				break;
 			}
-
-			write_value =  io_p->read();
+			sc_uint<DATA_WIDTH> io_in = io_p->read();
+			write_value = io_in;
 
 			for(int j=0; j<DATA_WIDTH; j++)
 			{
@@ -195,20 +181,13 @@ void RRAM_MNIST::page_write(void)
 				{
 					col = 0;
 				}
-				if (write_value[DATA_WIDTH-j-1] == 1)
-				{
-					data[row][col] = true;
-				}
-				else
-				{
-					data[row][col] = false;
-				}
+				data[row][col] = write_value[DATA_WIDTH-j-1];
 				col++;
 			}
 		}
 		
 		status_register_1[0] = 1;
-		wait(time_page_write);
+		wait(PAGE_WRITE_LATENCY, SC_NS);
 		status_register_1[1] = 0;
 		status_register_1[0] = 0;
 	}
@@ -230,21 +209,10 @@ void RRAM_MNIST::page_erase(void)
 		if (cs_p->event()) {
 			continue;
 		}
-
-		address = io_p->read().range(ADDR_WIDTH-1,0);
-
-		int address_int = 0;
-		for(int i=0;i<ADDR_WIDTH;i++)
-		{
-			if (address[i] == true)
-			{
-				address_int += pow(2,i);
-			}
-		}
-
-		int row = address_int / NUM_OF_ROWS;
-		// int col = address_int % NUM_OF_ROWS;
-
+		sc_uint<DATA_WIDTH> io_in = io_p->read();
+		address = io_in.range(ADDR_WIDTH-1,0);
+		
+		int row = address / NUM_OF_ROWS;
 		int col = 0;
 
 		while(col<NUM_OF_COLS)
@@ -254,110 +222,9 @@ void RRAM_MNIST::page_erase(void)
 		}
 		
 		status_register_1[0] = 1;
-		wait(time_page_erase);
+		wait(PAGE_ERASE_LATENCY, SC_NS);
 		status_register_1[1] = 0;
 		status_register_1[0] = 0;
-	}
-}
-
-void RRAM_MNIST::weight_write(void)
-{
-	while(true)
-	{
-		wait();
-		
-		// status_register_1[0] = 1;
-		
-		f.open("weights.txt");
-		
-		int row = 0;
-		int col = 0;
-	
-		int num_bit_pixel = NUM_OF_OUTPUT_NEURONS * DATA_WIDTH;
-		int beg = 0;
-		int num_weights = NUM_OF_OUTPUT_NEURONS*NUM_OF_INPUT_PIXELS;
-		for (int i=0;i<num_weights;i++)
-		{
-			f >> weight_float;
-	
-			// cout << "Reading weight " << i+1 << " as " << weight_float <<endl;
-	
-			long *weight_pointer = (long *)&weight_float;
-			sc_int<DATA_WIDTH> weight_sc_int = *weight_pointer;
-			weight = weight_sc_int;
-	
-			for(int j=0;j<DATA_WIDTH;j++)
-			{
-				if (weight[DATA_WIDTH-j-1] == 1)
-				{
-					data[row][col] = true;
-				}
-				else
-				{
-					data[row][col] = false;
-				}
-				col++;
-			}
-	
-			if ((i+1)%10==0 || col>=NUM_OF_COLS)
-			{
-				// cout << "Moving to next row" << endl; 
-				col = beg;
-				row++;
-				// cout << "Row " << row << " col " << col << endl; 
-			}
-			if (row>=NUM_OF_ROWS)
-			{
-				// cout << "Wrapping the weights" << endl;
-				row = 0;
-				beg += num_bit_pixel;
-				col = beg;
-				// cout << "Row " << row << " col " << col << endl;
-			}
-		}
-		// wait(time_weight_write);
-		// cout << "Weights written to memory" << endl;
-		// status_register_1[0] = 0;
-		// cout  << "Busy bit set to 0 at time " << sc_time_stamp() << endl;
-		// status_register_1[1] = 0;
-		// cout << "Write enable set to 0" << endl;
-	}
-}
-
-void RRAM_MNIST::read_neuron_value(void)
-{
-	while(true)
-	{
-		wait();
-		int act = 0;
-		while (true)
-		{
-			wait(clk_p->negedge_event() | cs_p->default_event());
-			if (cs_p->event()) {
-				break;
-			}
-			io_p->write(nerve.activation[act]);
-			act++;
-			if (act >= NUM_OF_OUTPUT_NEURONS) act = 0;
-		}
-		io_p->write(io_high_impedance);
-	}
-}
-
-void RRAM_MNIST::read_class_register(void)
-{
-	while(true)
-	{
-		wait();
-		while (true)
-		{
-			wait(clk_p->negedge_event() | cs_p->default_event());
-			if (cs_p->event()) {
-				break;
-			}
-			io_p->write(nerve.activation[NUM_OF_OUTPUT_NEURONS]);
-		}
-		io_p->write(io_high_impedance);
 	}
 }
 
@@ -373,7 +240,94 @@ void RRAM_MNIST::read_status_register(void)
 			if (cs_p->event()) {
 				break;
 			}
-			io_p->write(status_register_1(STATUS_REG_WIDTH-1,0));
+			sc_lv<DATA_WIDTH> io_out = status_register_1;
+			io_p->write(io_out);
+		}
+		io_p->write(io_high_impedance);
+	}
+}
+
+void RRAM_MNIST::weight_write(void)
+{
+	ifstream f;
+	
+	while(true)
+	{
+		wait();
+		
+		f.open("weights.txt");
+		
+		int row = 0;
+		int col = 0;
+		int beg = 0;
+		
+		int num_bit_pixel = NUM_OF_OUTPUT_NEURONS * DATA_WIDTH;
+		int num_weights = NUM_OF_INPUT_PIXELS * NUM_OF_OUTPUT_NEURONS;
+		
+		float weight_float;
+		
+		for (int i=0; i<num_weights; i++)
+		{
+			f >> weight_float;
+			
+			long *weight_pointer = (long *)&weight_float;
+			sc_uint<DATA_WIDTH> weight_sc_uint = *weight_pointer;
+			
+			for(int j=0; j<DATA_WIDTH; j++)
+			{
+				data[row][col] = weight_sc_uint[DATA_WIDTH-j-1];
+				col++;
+			}
+			
+			if (((i+1) % NUM_OF_OUTPUT_NEURONS == 0) || col >= NUM_OF_COLS)
+			{
+				col = beg;
+				row++;
+			}
+			if (row >= NUM_OF_ROWS)
+			{
+				row = 0;
+				beg += num_bit_pixel;
+				col = beg;
+			}
+		}
+	}
+}
+
+void RRAM_MNIST::read_neuron_value(void)
+{
+	while(true)
+	{
+		wait();
+		int act = 0;
+		while (true)
+		{
+			wait(clk_p->negedge_event() | cs_p->default_event());
+			if (cs_p->event()) {
+				break;
+			}
+			sc_lv<DATA_WIDTH> io_out = activation[act].read();
+			io_p->write(io_out);
+			act++;
+			if (act >= NUM_OF_OUTPUT_NEURONS) act = 0;
+		}
+		io_p->write(io_high_impedance);
+	}
+}
+
+void RRAM_MNIST::read_neuron_status(void)
+{
+	while(true)
+	{
+		wait();
+		while (true)
+		{
+			wait(clk_p->negedge_event() | cs_p->default_event());
+			if (cs_p->event()) {
+				break;
+			}
+			sc_lv<DATA_WIDTH> io_out = status.read();
+			io_p->write(io_out);
 		}
 		io_p->write(io_high_impedance);
 	}
@@ -381,116 +335,100 @@ void RRAM_MNIST::read_status_register(void)
 
 void RRAM_MNIST::inference(void)
 {
+	sc_uint<DATA_WIDTH> pixel;
+	
 	while(true)
 	{
 		wait();
 		status_register_1[0] = 1;
-		begin_add_update_neuron.notify();
-		pixels_read = 0;
-		nerve.activation[NUM_OF_OUTPUT_NEURONS][4] = 1;
-		while(true && pixels_read < NUM_OF_INPUT_PIXELS)
+		begin_read_weights.notify();
+		for(int i=0; i < NUM_OF_INPUT_PIXELS; i++)
 		{
 			wait(clk_p->posedge_event() | cs_p->default_event());
 			if (cs_p->event()) {
 				break;
 			}
-			pixel = io_p->read();
+			sc_uint<DATA_WIDTH> io_in = io_p->read();
+			pixel = io_in;
 			pixel_fifo.write(pixel);
-			pixels_read++;
 		}
-		nerve.activation[NUM_OF_OUTPUT_NEURONS][4] = 0;
 	}
 }
 
-void RRAM_MNIST::add_update_neuron(void)
+void RRAM_MNIST::read_weights(void)
 {
 	while(true)
 	{
 		wait();
-
+		
 		wait(clk_p->posedge_event() | cs_p->default_event());
 		if (cs_p->event()) {
 			continue;
 		}
 		
-		reset_lc.write(false);
+		reset.write(false);
 		
-		wait(SC_ZERO_TIME);
-		sc_logic reset_bit = (sc_logic) nerve.activation[NUM_OF_OUTPUT_NEURONS][6];
-		while(reset_bit == 1)
-		{
-			wait(clk_p->posedge_event());
-			wait(SC_ZERO_TIME);
-			reset_bit = nerve.activation[NUM_OF_OUTPUT_NEURONS][6];
+		wait(clk_p->posedge_event() | cs_p->default_event());
+		if (cs_p->event()) {
+			continue;
 		}
 		
-		reset_lc.write(true);
-
+		reset.write(true);
+		
+		wait(clk_p->posedge_event() | cs_p->default_event());
+		if (cs_p->event()) {
+			continue;
+		}
+		
+		enable.write(false);
+		
+		wait(clk_p->posedge_event() | cs_p->default_event());
+		if (cs_p->event()) {
+			continue;
+		}
+		
 		int row = 0;
 		int col = 0;
 		int beg = 0;
-		int num_pixel_bit = NUM_OF_OUTPUT_NEURONS * DATA_WIDTH;
-		bool flag = false;
-		bool wrap = false;
-			
-		if(cs_active)
+		
+		int num_bit_pixel = NUM_OF_OUTPUT_NEURONS * DATA_WIDTH;
+		
+		for(int i=0; i<NUM_OF_INPUT_PIXELS; i++)
 		{
-			enable_lc.write(false);		
+			wait(READ_ARRAY_LATENCY, SC_NS);
 			
-			for(int i=0; i<NUM_OF_INPUT_PIXELS; i++)
+			for(int j=0; j<NUM_OF_OUTPUT_NEURONS; j++)
 			{
-				for(int j=0; j<cycles_read_weight; j++)
+				sc_uint<DATA_WIDTH> weight_tmp;
+				for(int k=0; k<DATA_WIDTH; k++)
 				{
-					wait(clk_p->posedge_event() | cs_p->default_event());
-					if(cs_p->event() && pixels_read < NUM_OF_INPUT_PIXELS) 
-					{
-						flag = true;
-						break;
-					}
+					weight_tmp[DATA_WIDTH-k-1] = data[row][col];
+					col++;
 				}
-
-				if(pixels_read < NUM_OF_INPUT_PIXELS && flag == true) 
-				{
-					enable_lc.write(true);
-					break;
-				}
-				else
-				{
-					for(int k=0; k<num_pixel_bit; k++)
-					{
-						weight_page_buffer[num_pixel_bit-k-1] = (sc_logic)data[row][col];
-						col++;
-						if(col >= NUM_OF_COLS)
-						{
-							wrap = true;
-							col = beg;
-							row++;
-						}
-					}
-					
-					valid_lc.write(true);
-					weight_lc.write(weight_page_buffer);
-					wait(clk_p->negedge_event());
-					valid_lc.write(false);
-					weight_lc.write(weight_page_buffer);
-					if(wrap == false)
-					{
-						col = beg;
-						row++;
-					}
-					if (row >= NUM_OF_ROWS)
-					{
-						row = 0;
-						beg += num_pixel_bit;
-						col = beg;
-					}
-				}
+				page_buffer[j].write(weight_tmp);
 			}
-			status_register_1[0] = 0;
-			status_register_1[1] = 0;
-			enable_lc.write(true);				
-			valid_lc.write(false);
-			weight_lc.write(weight_high_impedance);
+			
+			row++;
+			col = beg;
+			
+			wait(clk_p->posedge_event() | cs_p->default_event());
+			if (cs_p->event()) {
+				break;
+			}
+			valid.write(true);
+			wait(clk_p->posedge_event());
+			valid.write(false);
+			
+			if (row >= NUM_OF_ROWS)
+			{
+				row = 0;
+				beg += num_bit_pixel;
+				col = beg;
+			}
 		}
+		
+		status_register_1[0] = 0;
+		status_register_1[1] = 0;
+		enable.write(true);
 	}
 }

@@ -55,12 +55,12 @@ void Sender::test_script(void)
 	{
 		wait(clk.posedge_event());
 		dout = io.read();
-		cout << "Weight read as in bit format " << dout << endl;
+		// cout << "Weight read as in bit format " << dout << endl;
 		sc_int<DATA_WIDTH> weight_sc_int = dout;
 		long weight_int = weight_sc_int;
 		float *weight_p = (float *)&weight_int;
 		float weight_float = *weight_p;
-		cout << "Weight " << i+1 << " read as " << weight_float << " at time " << sc_time_stamp() << endl;  
+		// cout << "Weight " << i+1 << " read as " << weight_float << " at time " << sc_time_stamp() << endl;  
 	}
 	wait(clk.negedge_event());
 	cs.write(true);

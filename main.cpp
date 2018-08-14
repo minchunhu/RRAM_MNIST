@@ -7,7 +7,7 @@ int sc_main(int argc, char* argv[])
 	sc_signal<bool> cs;
 	sc_signal<sc_lv<DATA_WIDTH>, SC_MANY_WRITERS > io;
 	
-	RRAM_MNIST RRAM("RRAM",1,8);
+	RRAM_MNIST RRAM("RRAM");
 		RRAM.clk_p(clk);
 		RRAM.cs_p(cs);
 		RRAM.io_p(io);

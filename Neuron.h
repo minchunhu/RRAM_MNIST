@@ -11,37 +11,34 @@ using namespace sc_dt;
 
 SC_MODULE(Neuron)
 {
-	sc_time time_neuron_reset;
-	sc_lv<NUM_OF_OUTPUT_NEURONS * DATA_WIDTH> weight;
-	sc_lv<DATA_WIDTH> pixel;
-	
-	sc_in<bool> en_p;
-	sc_in<bool> reset_p;
+	sc_in<bool> clk_p;
+	sc_in<bool> reset_p; //low active
+	sc_in<bool> enable_p; //low active
 	sc_in<bool> valid_p;
-	sc_in<sc_lv<DATA_WIDTH * NUM_OF_OUTPUT_NEURONS> > weight_p;
-	sc_fifo_in<sc_lv<DATA_WIDTH> > pixel_p;
-
+	sc_out< sc_uint<DATA_WIDTH> > status_p;
+	sc_vector< sc_out< sc_uint<DATA_WIDTH> > > activation_p;
+	sc_vector< sc_in< sc_uint<DATA_WIDTH> > > weight_p;
+	sc_fifo_in< sc_uint<DATA_WIDTH> > pixel_fifo_p;
+	
 	public:
-		sc_lv<DATA_WIDTH> activation[NUM_OF_OUTPUT_NEURONS+1];
-
-	SC_HAS_PROCESS(Neuron);
-	Neuron(sc_module_name name):
-		sc_module(name),
-		time_neuron_reset(100,SC_NS)
+		float activation[NUM_OF_OUTPUT_NEURONS];
+		sc_uint<DATA_WIDTH> status;
+		
+	SC_CTOR(Neuron):
+		activation_p("activation_p", NUM_OF_OUTPUT_NEURONS),
+		weight_p("weight_p", NUM_OF_OUTPUT_NEURONS)
 	{
-		for (int i=0; i<=NUM_OF_OUTPUT_NEURONS; i++)
+		status = 0;
+		for (int i=0; i<NUM_OF_OUTPUT_NEURONS; i++)
 		{
-			for(int j=0; j<DATA_WIDTH; j++)
-			{
-				activation[i][j] = 0;
-			}
+			activation[i] = 0;
 		}
-		SC_THREAD(read_reset);
-		SC_THREAD(add_update);
+		SC_THREAD(reset);
+		SC_THREAD(MAC); // multiply and accumulate
 	}
-
-	void read_reset(void);
-	void add_update(void);
+	
+	void reset(void);
+	void MAC(void);
 };
 
 #endif
